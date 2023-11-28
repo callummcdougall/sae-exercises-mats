@@ -61,7 +61,7 @@ def imshow(tensor: t.Tensor, renderer=None, **kwargs):
         for i in range(1, 1+n_facets):
             xaxis_name = "xaxis" if i == 1 else f"xaxis{i}"
             fig.layout[xaxis_name]["tickangle"] = xaxis_tickangle
-    return fig if return_fig else fig.show(renderer=renderer, config={"staticPlot": static})
+    return fig if return_fig else fig.show(renderer=renderer, cfg={"staticPlot": static})
 
 
 def reorder_list_in_plotly_way(L: list, col_wrap: int):

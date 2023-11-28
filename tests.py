@@ -7,10 +7,10 @@ import einops
 
 def test_model(Model):
     import solutions
-    config = solutions.Config(10, 5, 2)
+    cfg = solutions.Config(10, 5, 2)
     # get actual
-    model = Model(config)
-    model_soln = solutions.Model(config)
+    model = Model(cfg)
+    model_soln = solutions.Model(cfg)
     assert set(model.state_dict().keys()) == set(model_soln.state_dict().keys()), "Incorrect parameters."
     model.load_state_dict(model_soln.state_dict())
     batch = model_soln.generate_batch(10)
@@ -28,9 +28,9 @@ def test_generate_batch(Model):
     n_instances = 10
     n_hidden = 2
     batch_size = 5000
-    config = solutions.Config(n_instances, n_features, n_hidden)
+    cfg = solutions.Config(n_instances, n_features, n_hidden)
     feature_probability=(t.arange(1, 11) / 11).unsqueeze(-1)
-    model = Model(config, feature_probability=feature_probability)
+    model = Model(cfg, feature_probability=feature_probability)
     batch = model.generate_batch(batch_size)
     assert batch.shape == (batch_size, n_instances, n_features), f"Expected shape (500, 10, 5), got {batch.shape}"
     assert t.allclose(batch, batch.clamp(0, 1)), "Not all elements of batch are in the [0, 1] range."
@@ -45,11 +45,11 @@ def test_calculate_loss(Model):
     instances= 10
     features = 5
     d_hidden = 2
-    config = solutions.Config(instances, features, d_hidden)
+    cfg = solutions.Config(instances, features, d_hidden)
 
     # Define model & solution model, both with trivial importances, and test for equality
-    model_soln = solutions.Model(config)
-    model = Model(config)
+    model_soln = solutions.Model(cfg)
+    model = Model(cfg)
     batch = model.generate_batch(10)
     out = model(batch)
     expected_loss = model_soln.calculate_loss(out, batch)
@@ -58,8 +58,8 @@ def test_calculate_loss(Model):
 
     # Now test with nontrivial importances
     importance = t.rand(instances, features)
-    model_soln = solutions.Model(config, importance=importance)
-    model = Model(config, importance=importance)
+    model_soln = solutions.Model(cfg, importance=importance)
+    model = Model(cfg, importance=importance)
     batch = model.generate_batch(10)
     out = model(batch)
     expected_loss = model_soln.calculate_loss(out, batch)

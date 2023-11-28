@@ -82,22 +82,22 @@ class Model(nn.Module):
 
     def __init__(
         self,
-        config: Config,
+        cfg: Config,
         feature_probability: Optional[Tensor] = None,
         importance: Optional[Tensor] = None,
         device = device,
     ):
         super().__init__()
-        self.config = config
+        self.cfg = cfg
 
         if feature_probability is None: feature_probability = t.ones(())
         self.feature_probability = feature_probability.to(device)
         if importance is None: importance = t.ones(())
         self.importance = importance.to(device)
 
-        self.W = nn.Parameter(t.empty((config.n_instances, config.n_hidden, config.n_features), device=device))
+        self.W = nn.Parameter(t.empty((cfg.n_instances, cfg.n_hidden, cfg.n_features), device=device))
         nn.init.xavier_normal_(self.W)
-        self.b_final = nn.Parameter(t.zeros((config.n_instances, config.n_features), device=device))
+        self.b_final = nn.Parameter(t.zeros((cfg.n_instances, cfg.n_features), device=device))
 
 
 
@@ -120,8 +120,8 @@ class Model(nn.Module):
         '''
         Generates a batch of data. We'll return to this function later when we apply correlations.
         '''
-        feat = t.rand((batch_size, self.config.n_instances, self.config.n_features), device=self.W.device)
-        feat_seeds = t.rand((batch_size, self.config.n_instances, self.config.n_features), device=self.W.device)
+        feat = t.rand((batch_size, self.cfg.n_instances, self.cfg.n_features), device=self.W.device)
+        feat_seeds = t.rand((batch_size, self.cfg.n_instances, self.cfg.n_features), device=self.W.device)
         feat_is_present = feat_seeds <= self.feature_probability
         batch = t.where(
             feat_is_present,
@@ -153,7 +153,7 @@ class Model(nn.Module):
         self,
         batch_size: int = 1024,
         steps: int = 10_000,
-        print_freq: int = 100,
+        log_freq: int = 100,
         lr: float = 1e-3,
         lr_scale: Callable[[int, int], float] = constant_lr,
     ):
@@ -180,8 +180,8 @@ class Model(nn.Module):
             optimizer.step()
 
             # Display progress bar
-            if step % print_freq == 0 or (step + 1 == steps):
-                progress_bar.set_postfix(loss=loss.item()/self.config.n_instances, lr=step_lr)
+            if step % log_freq == 0 or (step + 1 == steps):
+                progress_bar.set_postfix(loss=loss.item()/self.cfg.n_instances, lr=step_lr)
 
 
 
@@ -195,15 +195,15 @@ if MAIN:
 
 
 if MAIN:
-	config = Config(
+	cfg = Config(
 		n_instances = 10,
 		n_features = 5,
 		n_hidden = 2,
 	)
 	
-	importance = (0.9**t.arange(config.n_features))
+	importance = (0.9**t.arange(cfg.n_features))
 
-	feature_probability = (20 ** -t.linspace(0, 1, config.n_instances))
+	feature_probability = (20 ** -t.linspace(0, 1, cfg.n_instances))
 	
 	line(importance, width=600, height=400, title="Importance of each feature (same over all instances)", labels={"y": "Feature importance", "x": "Feature"})
 
@@ -214,7 +214,7 @@ if MAIN:
 
 if MAIN:
 	model = Model(
-		config=config,
+		cfg=cfg,
 		device=device,
 		importance=importance[None, :],
 		feature_probability=feature_probability[:, None]
@@ -225,21 +225,21 @@ if MAIN:
 
 
 # if MAIN:
-# 	plot_Ws_from_model(model, config)
+# 	plot_Ws_from_model(model, cfg)
 
 # %% VISUALIZING FEATURES ACROSS VARYING SPARSITY
 
 
 if MAIN:
-	config = Config(
+	cfg = Config(
 		n_instances = 20,
 		n_features = 100,
 		n_hidden = 20,
 	)
 	
-	importance = (100 ** -t.linspace(0, 1, config.n_features))
+	importance = (100 ** -t.linspace(0, 1, cfg.n_features))
 
-	feature_probability = (20 ** -t.linspace(0, 1, config.n_instances))
+	feature_probability = (20 ** -t.linspace(0, 1, cfg.n_instances))
 	
 	line(importance, width=600, height=400, title="Importance of each feature (same over all instances)", labels={"y": "Feature importance", "x": "Feature"})
 
@@ -250,7 +250,7 @@ if MAIN:
 
 if MAIN:
 	model = Model(
-		config=config,
+		cfg=cfg,
 		device=device,
 		importance = importance[None, :],
 		feature_probability = feature_probability[:, None]
@@ -285,16 +285,16 @@ def generate_correlated_batch(self: Model, batch_size: int) -> Float[Tensor, "ba
     Note, we assume the feature probability varies across instances but not features, i.e. all features
     in each instance have the same probability of being present.
     '''
-    n_correlated_pairs = self.config.n_correlated_pairs
-    n_anticorrelated_pairs = self.config.n_anticorrelated_pairs
+    n_correlated_pairs = self.cfg.n_correlated_pairs
+    n_anticorrelated_pairs = self.cfg.n_anticorrelated_pairs
 
-    n_uncorrelated = self.config.n_features - 2 * (n_correlated_pairs + n_anticorrelated_pairs)
+    n_uncorrelated = self.cfg.n_features - 2 * (n_correlated_pairs + n_anticorrelated_pairs)
     assert n_uncorrelated >= 0, "Need to have number of paired correlated + anticorrelated features <= total features"
-    assert self.feature_probability.shape == (self.config.n_instances, 1), "Feature probability should not vary across features in a single instance."
+    assert self.feature_probability.shape == (self.cfg.n_instances, 1), "Feature probability should not vary across features in a single instance."
 
     # Define uncorrelated features, the standard way
-    feat = t.rand((batch_size, self.config.n_instances, n_uncorrelated), device=self.W.device)
-    feat_seeds = t.rand((batch_size, self.config.n_instances, n_uncorrelated), device=self.W.device)
+    feat = t.rand((batch_size, self.cfg.n_instances, n_uncorrelated), device=self.W.device)
+    feat_seeds = t.rand((batch_size, self.cfg.n_instances, n_uncorrelated), device=self.W.device)
     feat_is_present = feat_seeds <= self.feature_probability
     batch_uncorrelated = t.where(
         feat_is_present,
@@ -304,8 +304,8 @@ def generate_correlated_batch(self: Model, batch_size: int) -> Float[Tensor, "ba
 
     # SOLUTION
     # Define correlated features: have the same sample determine if they're zero or not
-    feat = t.rand((batch_size, self.config.n_instances, 2 * n_correlated_pairs), device=self.W.device)
-    feat_set_seeds = t.rand((batch_size, self.config.n_instances, n_correlated_pairs), device=self.W.device)
+    feat = t.rand((batch_size, self.cfg.n_instances, 2 * n_correlated_pairs), device=self.W.device)
+    feat_set_seeds = t.rand((batch_size, self.cfg.n_instances, n_correlated_pairs), device=self.W.device)
     feat_set_is_present = feat_set_seeds <= self.feature_probability
     feat_is_present = einops.repeat(
         feat_set_is_present,
@@ -319,10 +319,10 @@ def generate_correlated_batch(self: Model, batch_size: int) -> Float[Tensor, "ba
 
     # Define anticorrelated features: have them all be zero with probability `feature_probability`, and
     # have a single feature randomly chosen if they aren't all zero
-    feat = t.rand((batch_size, self.config.n_instances, 2 * n_anticorrelated_pairs), device=self.W.device)
+    feat = t.rand((batch_size, self.cfg.n_instances, 2 * n_anticorrelated_pairs), device=self.W.device)
     # First, generate seeds (both for entire feature set, and for features within the set)
-    feat_set_seeds = t.rand((batch_size, self.config.n_instances, n_anticorrelated_pairs), device=self.W.device)
-    first_feat_seeds = t.rand((batch_size, self.config.n_instances, n_anticorrelated_pairs), device=self.W.device)
+    feat_set_seeds = t.rand((batch_size, self.cfg.n_instances, n_anticorrelated_pairs), device=self.W.device)
+    first_feat_seeds = t.rand((batch_size, self.cfg.n_instances, n_anticorrelated_pairs), device=self.W.device)
     # Create boolean mask for whether the entire set is zero
     # Note: the *2 here didn't seem to be used by the paper, but it makes more sense imo! You can leave it out and still get good results.
     feat_set_is_present = feat_set_seeds <= 2 * self.feature_probability
@@ -353,7 +353,7 @@ if MAIN:
 # %%
 
 if MAIN:
-	config = Config(
+	cfg = Config(
 		n_instances = 10,
 		n_features = 4,
 		n_hidden = 2,
@@ -361,11 +361,11 @@ if MAIN:
 		n_anticorrelated_pairs = 1,
 	)
 
-	importance = t.ones(config.n_features, dtype=t.float, device=device)
-	feature_probability = (20 ** -t.linspace(0, 1, config.n_instances))
+	importance = t.ones(cfg.n_features, dtype=t.float, device=device)
+	feature_probability = (20 ** -t.linspace(0, 1, cfg.n_instances))
 
 	model = Model(
-		config=config,
+		cfg=cfg,
 		device=device,
 		importance=importance[None, :],
 		feature_probability=feature_probability[:, None]
@@ -382,7 +382,7 @@ if MAIN:
 # %%
 
 if MAIN:
-	feature_probability = (20 ** -t.linspace(0.5, 1, config.n_instances))
+	feature_probability = (20 ** -t.linspace(0.5, 1, cfg.n_instances))
 	model.feature_probability = feature_probability[:, None].to(device)
 
 	batch = model.generate_batch(batch_size = 10000)
@@ -404,7 +404,7 @@ if MAIN:
 # %%
 
 if MAIN:
-	config = Config(
+	cfg = Config(
 		n_instances = 5,
 		n_features = 4,
 		n_hidden = 2,
@@ -413,12 +413,12 @@ if MAIN:
 	)
 
 	# All same importance
-	importance = t.ones(config.n_features, dtype=t.float, device=device)
+	importance = t.ones(cfg.n_features, dtype=t.float, device=device)
 	# We use very low feature probabilities, from 5% down to 0.25%
 	feature_probability = (400 ** -t.linspace(0.5, 1, 5))
 
 	model = Model(
-		config=config,
+		cfg=cfg,
 		device=device,
 		importance=importance[None, :],
 		feature_probability=feature_probability[:, None]
@@ -426,12 +426,12 @@ if MAIN:
 
 	model.optimize()
 
-	# plot_Ws_from_model(model, config)
+	# plot_Ws_from_model(model, cfg)
 
 # %%
 
 if MAIN:
-	config = Config(
+	cfg = Config(
 		n_instances = 5,
 		n_features = 4,
 		n_hidden = 2,
@@ -440,12 +440,12 @@ if MAIN:
 	)
 
 	# All same importance
-	importance = t.ones(config.n_features, dtype=t.float, device=device)
+	importance = t.ones(cfg.n_features, dtype=t.float, device=device)
 	# We use very low feature probabilities, from 5% down to 0.25%
 	feature_probability = (400 ** -t.linspace(0.5, 1, 5))
 
 	model = Model(
-		config=config,
+		cfg=cfg,
 		device=device,
 		importance=importance[None, :],
 		feature_probability=feature_probability[:, None]
@@ -453,12 +453,12 @@ if MAIN:
 
 	model.optimize()
 
-	# plot_Ws_from_model(model, config)
+	# plot_Ws_from_model(model, cfg)
 
 # %%
 
 if MAIN:
-	config = Config(
+	cfg = Config(
 		n_instances = 5,
 		n_features = 6,
 		n_hidden = 2,
@@ -467,12 +467,12 @@ if MAIN:
 	)
 
 	# All same importance
-	importance = t.ones(config.n_features, dtype=t.float, device=device)
+	importance = t.ones(cfg.n_features, dtype=t.float, device=device)
 	# We use very low feature probabilities, from 5% down to 0.25%
 	feature_probability = (400 ** -t.linspace(0.5, 1, 5))
 
 	model = Model(
-		config=config,
+		cfg=cfg,
 		device=device,
 		importance=importance[None, :],
 		feature_probability=feature_probability[:, None]
@@ -480,21 +480,21 @@ if MAIN:
 
 	model.optimize()
 
-	# plot_Ws_from_model(model, config)
+	# plot_Ws_from_model(model, cfg)
 
 # %%
 
 if MAIN:
-	config = Config(
+	cfg = Config(
 		n_features = 200,
 		n_hidden = 20,
 		n_instances = 20,
 	)
 	
-	feature_probability = (20 ** -t.linspace(0, 1, config.n_instances))
+	feature_probability = (20 ** -t.linspace(0, 1, cfg.n_instances))
 	
 	model = Model(
-		config=config,
+		cfg=cfg,
 		device=device,
 		# For this experiment, use constant importance.
 		feature_probability = feature_probability[:, None]
@@ -538,12 +538,12 @@ if MAIN:
 class NeuronModel(Model):
     def __init__(
         self, 
-        config: Config, 
+        cfg: Config, 
         feature_probability: Optional[Tensor] = None,
         importance: Optional[Tensor] = None,               
         device=device
     ):
-        super().__init__(config, feature_probability, importance, device)
+        super().__init__(cfg, feature_probability, importance, device)
 
     def forward(
         self, 
@@ -560,8 +560,8 @@ class NeuronModel(Model):
         return out
 
     def generate_batch(self, batch_size) -> Tensor:
-        feat = 2 * t.rand((batch_size, self.config.n_instances, self.config.n_features), device=self.W.device) - 1
-        feat_seeds = t.rand((batch_size, self.config.n_instances, self.config.n_features), device=self.W.device)
+        feat = 2 * t.rand((batch_size, self.cfg.n_instances, self.cfg.n_features), device=self.W.device) - 1
+        feat_seeds = t.rand((batch_size, self.cfg.n_instances, self.cfg.n_features), device=self.W.device)
         feat_is_present = feat_seeds <= self.feature_probability
         batch = t.where(
             feat_is_present,
@@ -585,7 +585,7 @@ def calculate_neuron_loss(
 #     model: Union[Model, NeuronModel], 
 #     batch_size: int = 1024,
 #     steps: int = 10_000,
-#     print_freq: int = 100,
+#     log_freq: int = 100,
 #     lr: float = 1e-3,
 #     lr_scale: Callable = constant_lr,
 # ):
@@ -594,7 +594,7 @@ def calculate_neuron_loss(
     
 #     This version can accept either a Model or NeuronModel instance.
 #     '''
-#     cfg = model.config
+#     cfg = model.cfg
 
 #     optimizer = t.optim.AdamW(list(model.parameters()), lr=lr)
 
@@ -613,23 +613,23 @@ def calculate_neuron_loss(
 #             loss.backward()
 #             optimizer.step()
 
-#             if step % print_freq == 0 or (step + 1 == steps):
+#             if step % log_freq == 0 or (step + 1 == steps):
 #                 progress_bar.set_postfix(loss=loss.item()/cfg.n_instances, lr=step_lr)
 
                 
 
 # for n_features in [5, 6, 8]:
 
-#     config = Config(
+#     cfg = Config(
 #         n_instances = 1,
 #         n_features = n_features,
 #         n_hidden = 5,
 #     )
 
 #     model = NeuronModel(
-#         config=config,
+#         cfg=cfg,
 #         device=device,
-#         feature_probability=t.ones(model.config.n_instances, device=device)[:, None],
+#         feature_probability=t.ones(model.cfg.n_instances, device=device)[:, None],
 #     )
 
 #     optimize(model, steps=1000)
