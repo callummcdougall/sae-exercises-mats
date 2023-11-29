@@ -497,9 +497,12 @@ def frac_active_line_plot(
     title: Optional[str] = None,
     width: Optional[int] = None,
     height: Optional[int] = None,
+    y_max: Optional[float] = None,
 ):
     frac_active = frac_active[::plot_every_n_steps]
     n_steps, n_instances, n_hidden_ae = frac_active.shape
+
+    y_max = y_max if (y_max is not None) else (feature_probability * 3)
     
     fig = go.Figure(layout=dict(
         template = "simple_white",
@@ -508,7 +511,7 @@ def frac_active_line_plot(
         yaxis_title = "Fraction of Active Neurons",
         width = width,
         height = height,
-        yaxis_range = [0, feature_probability * 3],
+        yaxis_range = [0, y_max],
     ))
 
     for inst in range(n_instances):
