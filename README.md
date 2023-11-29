@@ -1,5 +1,7 @@
 This is a GitHub repo for hosting some exercises in sparse autoencoders, which I've recently finished working on as part of the upcoming ARENA 3.0 iteration. Having spoken to Neel Nanda and others in interpretability-related MATS streams, it seemed useful to make these exercises accessible out of the context of the rest of the ARENA curriculum.
 
+<img src="https://raw.githubusercontent.com/callummcdougall/computational-thread-art/master/example_images/misc/galaxies.jpeg" width="350">
+
 **Links to Colabs:** [**Exercises**](https://colab.research.google.com/drive/1rPy82rL3iZzy2_Rd3F82RwFhlVnnroIh?usp=sharing)**,** [**Solutions**](https://colab.research.google.com/drive/1fg1kCFsG0FCyaK4d5ejEsot4mOVhsIFH?usp=sharing)**.**
 
 If you don't like working in Colabs, then you can clone this repo, download the exercises & solutions Colabs as notebooks, and run them in the same directory.
@@ -8,11 +10,7 @@ The exercises were built out from the Toy Models of Superposition exercises from
 
 ## **SAEs in toy models**
 
-We take the toy models from Anthropic's [Toy Models of Superposition paper](https://transformer-circuits.pub/2022/toy_model/index.html) (which there are also exercises for), and train sparse autoencoders on the representations learned by these toy models. These exercises culminate in using **neuron resampling** to successfully recover all the learned features from the toy model of bottleneck superposition:
-
-![](https://39669.cdn.cke-cs.com/rQvD3VnunXZu34m86e5f/animations/79d0e45168b4b0ce8c1783a8ad84d6548fb12fc71f87020a.gif)
-
-Animation of the training process for SAEs in Anthropic's toy model of superposition. The red neurons represent resamplings. All instances eventually converge to accurately representing all five of the original model's features.
+We take the toy models from Anthropic's [Toy Models of Superposition paper](https://transformer-circuits.pub/2022/toy_model/index.html) (which there are also exercises for), and train sparse autoencoders on the representations learned by these toy models. These exercises culminate in using **neuron resampling** to successfully recover all the learned features from the toy model of bottleneck superposition - see [this animation](https://github.com/callummcdougall/sae-exercises-mats/blob/main/animation_2.gif).
 
 ## **SAEs in real models**
 
