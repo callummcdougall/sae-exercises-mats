@@ -1,6 +1,6 @@
 This is a GitHub repo for hosting some exercises in sparse autoencoders, which I've recently finished working on as part of the upcoming ARENA 3.0 iteration. Having spoken to Neel Nanda and others in interpretability-related MATS streams, it seemed useful to make these exercises accessible out of the context of the rest of the ARENA curriculum.
 
-<img src="https://raw.githubusercontent.com/callummcdougall/computational-thread-art/master/example_images/misc/galaxies.jpeg" width="350">
+<img src="https://raw.githubusercontent.com/callummcdougall/computational-thread-art/master/example_images/misc/galaxies.jpeg" width="300">
 
 **Links to Colabs:** [**Exercises**](https://colab.research.google.com/drive/1rPy82rL3iZzy2_Rd3F82RwFhlVnnroIh?usp=sharing)**,** [**Solutions**](https://colab.research.google.com/drive/1fg1kCFsG0FCyaK4d5ejEsot4mOVhsIFH?usp=sharing)**.**
 
