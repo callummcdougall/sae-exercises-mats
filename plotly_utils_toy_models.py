@@ -269,7 +269,6 @@ def plot_features_in_2d(
         fig.canvas.draw_idle()
     
     def play(event):
-        print("Play!")
         _ = slider.val
         for i in range(n_timesteps):
             update(i)
