@@ -1,6 +1,6 @@
-from copy import deepcopy
 import torch as t
 from torch import Tensor
+from IPython.display import clear_output
 from typing import List, Union, Optional
 import plotly.express as px
 import plotly.graph_objects as go
@@ -11,7 +11,7 @@ from jaxtyping import Float
 import einops
 
 from matplotlib import pyplot as plt
-from matplotlib.widgets import Slider, Button
+from matplotlib.widgets import Slider # , Button
 from matplotlib.animation import FuncAnimation
 
 Arr = np.ndarray
@@ -184,7 +184,7 @@ def plot_features_in_2d(
     title: Optional[str] = None,
     subplot_titles: Optional[List[str]] = None,
     save: Optional[str] = None,
-    return_ani: bool = False,
+    colab: bool = False,
 ):
     '''
     Visualises superposition in 2D.
@@ -299,196 +299,11 @@ def plot_features_in_2d(
     if isinstance(save, str):
         ani = FuncAnimation(fig, update, frames=n_timesteps, interval=0.04, repeat=False)
         ani.save(save, writer='pillow', fps=25)
-    elif return_ani:
+    elif colab:
         ani = FuncAnimation(fig, update, frames=n_timesteps, interval=0.04, repeat=False)
+        clear_output()
         return ani
-    else:
-        plt.show()
-
-
-
-
-# def visualise_2d_superposition_over_time(
-#     data_for_plotting: List[dict],
-#     width: Optional[int] = None,
-#     height: Optional[int] = None,
-# ):
-#     '''
-#     Does the same as the function below, but has a different input type: a list of dictionaries containing "values", "colors", "steps" and "title".
-
-#     Returns an animated plot showing progression over time.
-#     '''
-#     n_instances = len(data_for_plotting[0]["values"])
-#     master_fig = make_subplots(rows=1, cols=n_instances)
-#     steps = []
-#     fig_count = len(data_for_plotting)
-
-#     for i, data in enumerate(data_for_plotting):
-
-#         # Create the figure for this timestep, and add all traces to the master figure
-#         fig = visualise_2d_superposition(
-#             values = data["values"],
-#             colors = data["colors"],
-#             subplot_titles = data.get("subplot_titles", None),
-#             show = False,
-#         )
-#         # fig.show()
-#         # Calculate the total number of traces we'll have by the end
-#         if i == 0:
-#             trace_total = len(fig.data) * fig_count
-        
-#         # Add the trace, also calculating the index of the first & last trace so we can set step visibility
-#         pre_trace_idx = len(master_fig.data)
-#         for trace in fig.data:
-#             new_trace = deepcopy(trace)
-#             new_trace.visible = i == 0
-#             new_trace.hoverinfo = "none"
-#             col = max(1, int("0" + new_trace["xaxis"].strip("x")))
-#             master_fig.add_trace(new_trace, row=1, col=col)
-#         post_trace_idx = len(master_fig.data)
-
-#         # Add the slider step: visible iff the trace index is between pre and post
-#         step = dict(
-#             method = "update",
-#             args = [
-#                 {"visible": [pre_trace_idx <= trace_idx < post_trace_idx for trace_idx in range(trace_total)]},
-#                 {"title": data["title"]},
-#             ],
-#             # label = data["title"],
-#         )
-#         steps.append(step)
-
-#     # Add the slider
-#     sliders = [dict(
-#         active = 0,
-#         currentvalue = {"prefix": "Step: "},
-#         pad = {"t": 50},
-#         steps = steps,
-#     )]
-
-#     # Do all the same layout updates as the function below, plus adding sliders
-#     title = ""
-#     master_fig.update_layout(
-#         sliders=sliders,
-#         width=width,
-#         height=height,
-#         title=title,
-#         margin=dict(l=30, r=30, b=10, t=20 + (30 if title is not None else 0)),
-#         plot_bgcolor='white',
-#     )
-#     master_fig.update_yaxes(
-#         range=[-1.5, 1.5],
-#         showticklabels=True,
-#         scaleanchor="x",
-#         scaleratio=1,
-#         showline=True, 
-#         linewidth=1, 
-#         linecolor='black',
-#         mirror=True,
-#     )
-#     master_fig.update_xaxes(
-#         range=[-1.5, 1.5],
-#         showticklabels=True,
-#         showline=True, 
-#         linewidth=1, 
-#         linecolor='black',
-#         mirror=True,
-#     )
-#     master_fig.show()
-
-        
-
-            
-
-
-
-# def visualise_2d_superposition(
-#     values: Float[Tensor, "instances d_hidden feats"],
-#     colors: Optional[Union[Tuple[int, int], Float[Tensor, "instances feats"]]] = None,
-#     width: Optional[int] = None,
-#     height: Optional[int] = None,
-#     title: Optional[str] = None,
-#     subplot_titles: Optional[List[str]] = None,
-#     small_lines: bool = False,
-#     show: bool = True,
-# ):
-#     """Plot a grid of subplots, each of which is a scatter plot of the values of a feature for each instance.
-#     The color of each point is determined by the value of the corresponding feature in the colors tensor.
-#     """
-#     n_instances, d_hidden, n_feats = values.shape
-
-#     # Make subplot
-#     fig = make_subplots(
-#         rows = 1,
-#         cols = n_instances,
-#         subplot_titles = subplot_titles,
-#         shared_yaxes = True,
-#         shared_xaxes = True,
-#     )
-#     colors = parse_colors_for_superposition_plot(colors, n_instances, n_feats)
-
-#     # Operations like transpose mean smth different in numpy, so change for consistency
-#     if isinstance(values, np.ndarray):
-#         values = t.from_numpy(values)
-
-#     for instance_idx, (instance_values, instance_colors) in enumerate(zip(values.transpose(-1, -2), colors)):
-#         for feat_values, feat_color in zip(instance_values, instance_colors):
-
-#             x, y = feat_values.tolist()
-
-#             fig.add_trace(
-#                 go.Scatter(
-#                     x = [0, x],
-#                     y = [0, y],
-#                     mode = "lines",
-#                     line = dict(color = feat_color, width = 1 if small_lines else 2),
-#                     showlegend = False,
-#                 ),
-#                 row = 1,
-#                 col = instance_idx + 1,
-#             )
-#             fig.add_trace(
-#                 go.Scatter(
-#                     x = [x],
-#                     y = [y],
-#                     mode = "markers",
-#                     marker = dict(color = feat_color, size = 5 if small_lines else 10),
-#                     showlegend = False,
-#                 ),
-#                 row = 1,
-#                 col = instance_idx + 1,
-#             )
-
-#     if not(show):
-#         return fig
-
-#     fig.update_layout(
-#         width=width,
-#         height=height,
-#         title=title,
-#         margin=dict(l=30, r=30, b=30, t=50 + (30 if title is not None else 0)),
-#         plot_bgcolor='white',
-#     )
-#     fig.update_yaxes(
-#         range=[-1.5, 1.5],
-#         showticklabels=True,
-#         scaleanchor="x",
-#         scaleratio=1,
-#         showline=True, 
-#         linewidth=1, 
-#         linecolor='black',
-#         mirror=True,
-#     )
-#     fig.update_xaxes(
-#         range=[-1.5, 1.5],
-#         showticklabels=True,
-#         showline=True, 
-#         linewidth=1, 
-#         linecolor='black',
-#         mirror=True,
-#     )
-#     fig.show()
-
+    plt.show()
 
 
 
