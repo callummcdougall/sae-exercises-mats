@@ -184,6 +184,7 @@ def plot_features_in_2d(
     title: Optional[str] = None,
     subplot_titles: Optional[List[str]] = None,
     save: Optional[str] = None,
+    return_ani: bool = False,
 ):
     '''
     Visualises superposition in 2D.
@@ -298,8 +299,11 @@ def plot_features_in_2d(
     if isinstance(save, str):
         ani = FuncAnimation(fig, update, frames=n_timesteps, interval=0.04, repeat=False)
         ani.save(save, writer='pillow', fps=25)
-
-    plt.show()
+    elif return_ani:
+        ani = FuncAnimation(fig, update, frames=n_timesteps, interval=0.04, repeat=False)
+        return ani
+    else:
+        plt.show()
 
 
 
