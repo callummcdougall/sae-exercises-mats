@@ -1,5 +1,8 @@
 # %%
 
+# ! Note - these solutions are a bit out-of-date. The tests (which import the solutions) should all work, but the solutions haven't been updated
+# ! to be consistent with the new contents of the Colab (e.g. SAE exercises don't yet have solutions here). These will be added shortly.
+
 import os; os.environ["ACCELERATE_DISABLE_RICH"] = "1"
 import sys
 import torch as t
