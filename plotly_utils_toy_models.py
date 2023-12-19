@@ -423,7 +423,8 @@ def plot_features_in_2d(
         row_col_tuples = [(i // n_cols, i % n_cols) for i in range(n_instances)]
 
     # Set correct matplotlib backend (if it's an animation then we have to open it in a new window)
-    set_matplotlib_backend("qt" if n_timesteps > 1 else "inline")
+    if not(colab):
+        set_matplotlib_backend("qt" if n_timesteps > 1 else "inline")
 
     # ! This is the section where we convert colors to 3D, with shape [timesteps, instances, features]. Several different cases to handle.
     colors = copy(colors)
@@ -545,7 +546,6 @@ def plot_features_in_2d(
         ani = FuncAnimation(fig, update, frames=n_timesteps, interval=0.04, repeat=False)
         clear_output()
         return ani
-    
 
     plt.show()
 
