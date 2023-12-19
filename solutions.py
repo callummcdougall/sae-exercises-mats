@@ -665,6 +665,25 @@ if MAIN:
 # ======================================================
 # ! 4 - TMS: Feature Geometry
 # ======================================================
+    
+@t.inference_mode()
+def compute_dimensionality(
+    W: Float[Tensor, "n_instances n_hidden n_features"]
+) -> Float[Tensor, "n_instances n_features"]:
+
+    # Compute numerator terms
+    W_norms = W.norm(dim=1, keepdim=True)
+    numerator = W_norms.squeeze() ** 2
+
+    # Compute denominator terms
+    W_normalized = W / (W_norms + 1e-8)
+    denominator = einops.einsum(W_normalized, W, "i h f1, i h f2 -> i f1 f2").pow(2).sum(-1)
+
+    return numerator / denominator
+
+# %%
+
+
 
 # ======================================================
 # ! 5 - SAEs in Toy Models
