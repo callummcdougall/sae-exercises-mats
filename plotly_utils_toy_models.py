@@ -1,5 +1,6 @@
 import torch as t
 from torch import Tensor
+from copy import copy
 from IPython.display import clear_output
 from typing import List, Union, Optional
 import plotly.express as px
@@ -9,12 +10,52 @@ import numpy as np
 from typing import Tuple, List
 from jaxtyping import Float
 import einops
+from IPython import get_ipython
 
+import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib.widgets import Slider # , Button
 from matplotlib.animation import FuncAnimation
+from matplotlib.colors import LinearSegmentedColormap
 
 Arr = np.ndarray
+
+# Define the color for light grey
+light_grey = np.array([15/16, 15/16, 15/16, 1.0])  # RGBA for light grey
+
+# Get the colors for red and blue from the coolwarm colormap
+red = plt.cm.coolwarm(0.0)
+blue = plt.cm.coolwarm(1.0)
+
+# Create the first half (red to light grey)
+first_half = np.linspace(red, light_grey, 128)
+
+# Create the second half (light grey to blue)
+second_half = np.linspace(light_grey, blue, 128)
+
+# Concatenate both halves
+colors = np.vstack((first_half, second_half))
+
+# Create a new colormap
+new_cmap = LinearSegmentedColormap.from_list("modified_coolwarm", colors)
+
+# # Register the colormap, if not already registered
+# if "coolwarm_lightgrey" not in plt.colormaps():
+#     plt.register_cmap(cmap=new_cmap)
+
+
+
+
+def set_matplotlib_backend(backend):
+    """
+    Switch the matplotlib backend.
+    :param backend: 'inline' for inline plots, 'qt' for Qt backend.
+    """
+    if backend == 'inline':
+        get_ipython().run_line_magic('matplotlib', 'inline')
+    elif backend == 'qt':
+        get_ipython().run_line_magic('matplotlib', 'qt')
+
 
 
 def plot_correlated_features(batch: Float[Tensor, "instances batch_size feats"], title: str):
@@ -25,29 +66,82 @@ def plot_correlated_features(batch: Float[Tensor, "instances batch_size feats"],
         ],
         layout=dict(
             template="simple_white", title=title,
-            bargap=0.3, xaxis=dict(tickmode="array", tickvals=list(range(batch.squeeze().shape[0]))),
+            bargap=0.4, bargroupgap=0.0, xaxis=dict(tickmode="array", tickvals=list(range(batch.squeeze().shape[0]))),
             xaxis_title="Pair of features", yaxis_title="Feature Values",
             height=400, width=1000,
         )
     ).show()
 
 
+
+def rearrange_tensor(W: Float[Tensor, "feats d_hidden"]):
+    '''
+    Rearranges the columns of the tensor (i.e. rearranges neurons) in descending order of
+    their monosemanticity (where we define monosemanticity as the largest fraction of this
+    neuron's norm which is a single feature).
+
+    Also returns the number of "monosemantic features", which we (somewhat arbitrarily)
+    define as the fraction being >90% of the total norm.
+    '''
+    norm_by_neuron = W.pow(2).sum(dim=0)
+    # monosemanticity = W.max(dim=0).values / (norm_by_neuron + 1e-6).sqrt()
+    monosemanticity = W.abs().max(dim=0).values / (norm_by_neuron + 1e-6).sqrt()
+
+    column_order = monosemanticity.argsort(descending=True).tolist()
+
+    n_monosemantic_features = (monosemanticity.abs() > 0.99).sum().item()
+
+    return W[:, column_order], n_monosemantic_features
+
+
+def rearrange_full_tensor(W: Float[Tensor, "instances d_hidden feats"]):
+    '''
+    Same as above, but works on W in its original form, and returns a list of
+    number of monosemantic features per instance.
+    '''
+    n_monosemantic_features_list = []
+
+    for i, W_inst in enumerate(W):
+        W_inst_rearranged, n_monosemantic_features = rearrange_tensor(W_inst.T)
+        W[i] = W_inst_rearranged.T
+        n_monosemantic_features_list.append(n_monosemantic_features)
+
+    return W, n_monosemantic_features_list
+
+
+
+def helper_get_viridis(v, string=True):
+    r, g, b, a = plt.get_cmap('viridis')(v)
+    if string:
+        r, g, b = int(255*r), int(255*g), int(255*b)
+        return f"rgb({r}, {g}, {b})"
+    else:
+        return r, g, b
+
+
+
 def plot_features_in_Nd(
-    values: Float[Tensor, "instances d_hidden feats"],
+    W: Float[Tensor, "instances d_hidden feats"],
     height: int,
     width: int,
-    show_wtw: bool = True,
+    title: Optional[str] = None,
+    subplot_titles: Optional[List[str]] = None,
+    neuron_plot: bool = False,
 ):
-    n_instances, d_hidden, n_feats = values.shape
+    n_instances, d_hidden, n_feats = W.shape
 
-    W = values.detach().cpu()
+    W = W.detach().cpu()
 
-    W_norm = W / (1e-5 + t.linalg.norm(W, 2, dim=1, keepdim=True))
+    # Rearrange to align with standard basis
+    W, n_monosemantic_features = rearrange_full_tensor(W)
 
-    # We get interference[i, j] = sum_{j!=i} (W_norm[i] @ W[j]) (ignoring the instance dimension)
+    # Normalize W, i.e. W_normed[inst, i] is normalized i-th feature vector
+    W_normed = W / (1e-6 + t.linalg.norm(W, 2, dim=1, keepdim=True))
+
+    # We get interference[i, j] = sum_{j!=i} (W_normed[i] @ W[j]) (ignoring the instance dimension)
     # because then we can calculate superposition by squaring & summing this over j
     interference = einops.einsum(
-        W_norm, W,
+        W_normed, W,
         "instances hidden feats_i, instances hidden feats_j -> instances feats_i feats_j"
     )
     interference[:, range(n_feats), range(n_feats)] = 0
@@ -59,190 +153,343 @@ def plot_features_in_Nd(
         "instances feats_i feats_j -> instances feats_i",
         "sum",
     ).sqrt()
+    colors = [[helper_get_viridis(v.item()) for v in polysemanticity_for_this_instance] for polysemanticity_for_this_instance in polysemanticity]
 
     # Get the norms (this is the bar height)
-    norms = einops.reduce(
+    W_norms = einops.reduce(
         W.pow(2),
         "instances hidden feats -> instances feats",
         "sum",
     ).sqrt()
 
-    # We need W.T @ W for the heatmap (unless show_wtw=False, then we just use w)
-    if show_wtw:
+    # We need W.T @ W for the heatmap (unless this is a neuron plot, then we just use w)
+    if not(neuron_plot):
         WtW = einops.einsum(W, W, "instances hidden feats_i, instances hidden feats_j -> instances feats_i feats_j")
-        data = WtW.numpy()
+        imshow_data = WtW.numpy()
     else:
-        data = einops.rearrange(W, "instances hidden feats -> instances feats hidden").numpy()
+        imshow_data = einops.rearrange(W, "instances hidden feats -> instances feats hidden").numpy()
 
-    x = t.arange(n_feats)
+
+    # Get titles (if they exist). Make sure titles only apply to the bar chart in each row
+    titles = ["W" if neuron_plot else "W<sup>T</sup>W"] * n_instances + ["Neuron weights<br>stacked bar plot" if neuron_plot else "Feature norms"] * n_instances # , ||W<sub>i</sub>||
+    if subplot_titles is not None:
+        for i, st in enumerate(subplot_titles):
+            titles[i] = st + "<br>" + titles[i]
+
+    if neuron_plot:
+        row_heights = [0.45, 0.45] if title is None else [0.4, 0.4]
+    else:
+        row_heights = [0.3, 0.6 if title is None else 0.5]
+    # If lots of features, we need to have a taller imshow
+    if n_feats > 50:
+        row_heights = [row_heights[0] + 0.12, row_heights[1] - 0.12]
+
+    n_rows, n_cols = (2, n_instances)
 
     fig = make_subplots(
-        rows = n_instances,
-        cols = 2,
-        shared_xaxes = True,
-        vertical_spacing = 0.02,
-        horizontal_spacing = 0.1,
-        column_widths = [0.75, 0.25],
+        rows = n_rows,
+        cols = n_cols,
+        vertical_spacing = 0.1 if neuron_plot else 0.05,
+        row_heights = row_heights,
+        subplot_titles = titles,
     )
     for inst in range(n_instances):
-        fig.add_trace(
-            go.Bar(
-                x=x, 
-                y=norms[inst],
-                marker=dict(
-                    color=polysemanticity[inst],
-                    cmin=0,
-                    cmax=1
-                ),
-                width=0.9,
-            ),
-            row = 1+inst, 
-            col = 1,
-        )
+        # If it's the non-neuron plot, our x-axis is features, and y-axis is norms of that feature
+        # If it's the neuron plot, our x-axis is neurons (d_hidden), and y-axis is all the loadings of features on that neuron
+        # In both cases, colors are the same: polysemanticity of features. We've stored colors in the shape [instances, features],
+        # so if we're doing the neuron plot we need to broadcast each color[idx, feat] to shape (d_hidden,)
+
+        # Add bar charts
+        if neuron_plot:
+            for feat in range(n_feats):
+                fig.add_trace(
+                    go.Bar(x=t.arange(d_hidden), y=W[inst, :, feat], marker=dict(color=[colors[inst][feat]] * d_hidden), width=0.9),
+                    col = 1 + inst, row = 2,
+                )
+        else:
+            fig.add_trace(
+                go.Bar(y=t.arange(n_feats).flip(0), x=W_norms[inst], marker=dict(color=colors[inst]), width=0.9, orientation='h'),
+                col = 1 + inst, row = 2,
+            )
+        # Add heatmap (code is the same for neuron plot vs no neuron plot, although data is different: W.T @ W vs W)
         fig.add_trace(
             go.Image(
-                z=plt.cm.coolwarm((1 + data[inst]) / 2, bytes=True),
+                z=new_cmap((1 + imshow_data[inst]) / 2, bytes=True),
                 colormodel='rgba256',
-                customdata=data[inst],
-                hovertemplate='''\
-    In: %{x}<br>
-    Out: %{y}<br>
-    Weight: %{customdata:0.2f}
-    '''            
+                customdata=imshow_data[inst],
+                hovertemplate='''In: %{x}<br>\nOut: %{y}<br>\nWeight: %{customdata:0.2f}'''            
             ),
-            row=1+inst, col=2
+            col = 1 + inst, row = 1,
         )
 
-    fig.add_vline(
-      x=d_hidden-0.5, 
-      line=dict(width=0.5),
-      col=1,
-    )
+    if neuron_plot:
+        
+        # Stacked plots to allow for all features to be seen
+        fig.update_layout(barmode="relative")
+
+        # Weird naming convention for subplots, make sure we have a list of the subplot names for bar charts so we can iterate through them
+        n0 = 1 + n_instances
+        fig_indices = [str(i) if i != 1 else "" for i in range(n0, n0+n_instances)]
+
+        # Some hacks to make it look correct!
+        for inst in range(n_instances):
+            fig["layout"][f"yaxis{fig_indices[inst]}_range"] = [-6, 6]
+
+            # Add the background colors
+            row, col = (2, 1+inst)
+            fig.add_vrect(x0=-0.5, x1=-0.5 + n_monosemantic_features[inst], fillcolor="#440154", line_width=0.0, opacity=0.2, col=col, row=row, layer="below")
+            fig.add_vrect(x0=-0.5 + n_monosemantic_features[inst], x1=-0.5 + d_hidden, fillcolor="#fde725", line_width=0.0, opacity=0.2, col=col, row=row, layer="below")
+            # , xref=f"x{fig_idx}", yref=f"y{fig_idx}"
+            # domain = fig.layout[yaxis_name_right].domain
+
+    else:
+        # Add annotation of "features" on the y-axis of the bar plot
+        fig_indices = [str(i) if i != 1 else "" for i in range(n_instances+1, 2*n_instances+1)]
+        for inst in range(n_instances):
+            fig.add_annotation(
+                text="Features ➔", # ➤→⮕🡒➜
+                xref=f"x{fig_indices[inst]} domain", yref=f"y{fig_indices[inst]} domain",
+                x=-0.13, y=0.99,  # Positioning the annotation outside the first bar plot subfigure
+                showarrow=False,
+                font=dict(size=12),
+                textangle=90  # Set the text angle to 90 degrees for vertical text
+            )
+
+    # Add a horizontal line at the point where n_features = d_hidden (in non-neuron plot). After this point,
+    # we must have superposition if we represent all features.
+    for annotation in fig.layout.annotations:
+        annotation.font.size = 13
+    if not neuron_plot:
+        fig.add_hline(
+            y=n_feats-d_hidden-0.5,
+            line=dict(width=0.5),
+            opacity=1.0,
+            row=2,
+            annotation_text=f" d_hidden={d_hidden}",
+            annotation_position="bottom left", # "bottom"
+            annotation_font_size=11,
+        )
+
       
     # fig.update_traces(marker_size=1)
     fig.update_layout(
         showlegend=False, 
         width=width,
         height=height,
-        margin=dict(t=40, b=40)
+        margin=dict(t=40 if title is None else 110, b=40, l=50, r=40),
+        plot_bgcolor="#eee",
+        title=title,
+        title_y=0.95,
+        # template="simple_white",
     )
-    fig.update_xaxes(visible=False)
-    fig.update_yaxes(visible=False)
+
+    fig.update_xaxes(showticklabels=False, showgrid=False) # visible=False
+    fig.update_yaxes(showticklabels=False, showgrid=False)
+
     fig.show()
-
-
-def helper_get_viridis(v):
-    r, g, b, a = plt.get_cmap('viridis')(v)
-    return (r, g, b)
+    # print(fig.layout)
 
 
 
-def parse_colors_for_superposition_plot(
-    colors: Optional[Union[Tuple[int, int], Float[Tensor, "instances feats"]]],
-    n_instances: int,
-    n_feats: int,
-) -> List[List[str]]:
+def plot_features_in_Nd_discrete(
+    W1: Float[Tensor, "instances d_hidden feats"],
+    W2: Float[Tensor, "instances feats d_hidden"],
+    height: int,
+    width: int,
+    title: Optional[str] = None,
+    legend_names: Optional[str] = None,
+):
+    n_instances, d_hidden, n_feats = W1.shape
+
+    color_list = px.colors.qualitative.D3 + px.colors.qualitative.T10
+    assert n_feats <= len(color_list), "Too many features for discrete plot"
+
+    W1 = W1.detach().cpu()
+    W2 = W2.detach().cpu()
+
+    titles = [f"Inst={inst}<br>W<sub>1</sub>" for inst in range(n_instances)] + [f"W<sub>2</sub>" for inst in range(n_instances)]
+
+    fig = make_subplots(
+        rows = 2,
+        cols = n_instances,
+        subplot_titles = titles,
+        vertical_spacing = 0.1,
+    )
+    for inst in range(n_instances):
+        for feat in range(n_feats):
+            fig.add_trace(
+                go.Bar(x=t.arange(d_hidden), y=W1[inst, :, feat], marker=dict(color=[color_list[feat]] * d_hidden), showlegend=inst==0, name=legend_names[feat], width=0.9),
+                col = 1 + inst, row = 1,
+            )
+            # showlegend=inst==0, name=legend_names[feat]
+            fig.add_trace(
+                go.Bar(x=t.arange(d_hidden), y=W2[inst, feat, :], marker=dict(color=[color_list[feat]] * d_hidden), showlegend=False, width=0.9),
+                col = 1 + inst, row = 2,
+            )
+
+    # Stacked plots to allow for all features to be seen
+    fig.update_layout(barmode="relative")
+
+    # Weird naming convention for subplots, make sure we have a list of the subplot names for bar charts so we can iterate through them
+    fig_indices = [str(i) if i != 1 else "" for i in range(1, 1+2*n_instances)]
+    m = max(W1.abs().max(), W2.abs().max())
+    for inst in range(2*n_instances):
+        fig["layout"][f"yaxis{fig_indices[inst]}_range"] = [-m-1, m+1]
+      
+    # fig.update_traces(marker_size=1)
+    fig.update_layout(
+        legend_title_text="Feature importances",
+        width=width,
+        height=height,
+        margin=dict(t=40 if title is None else 110, b=40, l=50, r=40),
+        plot_bgcolor="#eee",
+        title=title,
+        title_y=0.95,
+        # template="simple_white",
+    )
+
+    fig.update_xaxes(showticklabels=False, showgrid=False) # visible=False
+    fig.update_yaxes(showgrid=False)
+
+    fig.show()
+    # print(fig.layout)
+
+
+
+def parse_colors_for_superposition_plot(color) -> List[List[str]]:
     '''
     There are lots of different ways colors can be represented in the superposition plot.
     
     This function unifies them all by turning colors into a list of lists of strings, i.e. one color for each instance & feature.
     '''
-    # If colors is a tensor, we assume it's the importances tensor, and we color according to a viridis color scheme
-    if isinstance(colors, Tensor):
-        colors = t.broadcast_to(colors, (n_instances, n_feats))
-        colors = [
-            [helper_get_viridis(v.item()) for v in colors_for_this_instance]
-            for colors_for_this_instance in colors
-        ]
-    
-    # If colors is a tuple of ints, it's interpreted as number of correlated / anticorrelated pairs
-    elif isinstance(colors, tuple):
-        n_corr, n_anti = colors
-        n_indep = n_feats - 2 * (n_corr - n_anti)
-        colors = [
-            ["blue", "blue", "limegreen", "limegreen", "purple", "purple"][:n_corr*2] + ["red", "red", "orange", "orange", "brown", "brown"][:n_anti*2] + ["black"] * n_indep
-            for _ in range(n_instances)
-        ]
-    
-    # If colors is a string, make all datapoints that color
-    elif isinstance(colors, str):
-        colors = [[colors] * n_feats] * n_instances
-    
-    # Lastly, if colors is None, make all datapoints black
-    elif colors is None:
-        colors = [["black"] * n_feats] * n_instances
-    
-    return colors
+    # If colors is a string or None, we assume all features in this instance have the same color
+    if color is None:
+        return "black"
+    elif isinstance(color, str):
+        return color
 
-
+    if isinstance(color, Tensor) and color.ndim == 0:
+        color = color.item()
+    if isinstance(color, float) or isinstance(color, int):
+        return helper_get_viridis(color, string=False)
 
 
 
 def plot_features_in_2d(
-    values: Float[Tensor, "timesteps instances d_hidden feats"],
+    W: Union[list, Float[Tensor, "timesteps instances d_hidden feats"]],
     colors = None, # shape [timesteps instances feats]
     title: Optional[str] = None,
     subplot_titles: Optional[List[str]] = None,
     save: Optional[str] = None,
     colab: bool = False,
+    n_rows: bool = None,
+    adjustable_limits: bool = False,
 ):
     '''
     Visualises superposition in 2D.
 
     If values is 4D, the first dimension is assumed to be timesteps, and an animation is created.
     '''
-    # Convert values to 4D for consistency
-    if values.ndim == 3:
-        values = values.unsqueeze(0)
-    values = values.transpose(-1, -2)
+
+    # Convert values to 4D for consistency (note that values might also be a list)
+    # Also, for consistency we have values be a list of lists of 2D tensors (cause they might not stack)
+    if isinstance(W, Tensor): W = W.detach().cpu()
+    n_dims = W[0][0].ndim + 2 # This works if values is wrapped with 0 / 1 / 2 lists
+    for _ in range(n_dims, 4):
+        W = [W]
+    W: List[List[Tensor]] = [[W_instance.T for W_instance in W_timestep] for W_timestep in W]
+    # So values is a list of lists of tensors, where each tensor corresponds to one instance at one timestep
     
     # Get dimensions
-    n_timesteps, n_instances, n_features, _ = values.shape
+    n_timesteps = len(W)
+    n_instances = len(W[0])
 
-    # If we have a large number of features per plot (i.e. we're plotting projections of data) then use smaller lines
-    linewidth, markersize = (1, 4) if (n_features >= 25) else (2, 10)
-    
-    # Convert colors to 3D, if it's 2D (i.e. same colors for all instances)
+    # Get features per instance, and limits per instance
+    n_features_per_instance = [W_instance.size(0) for W_instance in W[0]]
+    if adjustable_limits:
+        limits_per_instance = [
+            1.5 * max(W_instance[instance_idx].abs().max().item() for W_instance in W)
+            for instance_idx in range(n_instances)
+        ]
+    else:
+        limits_per_instance = [1.5 for _ in range(n_instances)]
+
+    # Use `n_instances` to figure out how many rows & cols we want (by default just 1 row)
+    if n_rows is None:
+        n_rows, n_cols = 1, n_instances
+        row_col_tuples = [(0, i) for i in range(n_instances)]
+    else:
+        n_cols = n_instances // n_rows
+        row_col_tuples = [(i // n_cols, i % n_cols) for i in range(n_instances)]
+
+    # Set correct matplotlib backend (if it's an animation then we have to open it in a new window)
+    set_matplotlib_backend("qt" if n_timesteps > 1 else "inline")
+
+    # ! This is the section where we convert colors to 3D, with shape [timesteps, instances, features]. Several different cases to handle.
+    colors = copy(colors)
+    # If colors is 0D (i.e. none, or a single string color), make it 2D (i.e. same for all features & instance & timesteps)
+    if isinstance(colors, str) or (colors is None):
+        colors = [[colors for _ in range(n_feats)] for n_feats in n_features_per_instance]
+    # If colors is 1D (i.e. it's a list of colors per timestep), make it 3D (i.e. broadcast over features & instances)
+    if isinstance(colors, list) and len(colors) == n_timesteps:
+        for i, colors_timestep in enumerate(colors):
+            if isinstance(colors_timestep, str) or (colors_timestep is None):
+                colors[i] = [[colors_timestep for _ in range(n_feats)] for n_feats in n_features_per_instance]
+    # If colors is 1D (i.e. it's a list of colors per feature), broadcast this across all instances
+    # (Note, if we want 1D but to broadcast across features not instances, we need to pass e.g. [["red"], ["blue"]] not ["red", "blue"])
     if isinstance(colors, list) and isinstance(colors[0], str):
         colors = [colors for _ in range(n_instances)]
-    # Convert colors to something which has 4D, if it is 3D (i.e. same colors for all timesteps)
+    # If colors is 1D in the other way (i.e. a list of colors per instance), broadcast this across all features
+    if isinstance(colors, list) and isinstance(colors[0], list) and isinstance(colors[0][0], str) and len(colors[0]) == 1:
+        colors = [[c[0] for _ in range(n_feats)] for c, n_feats in zip(colors, n_features_per_instance)]
+    # If colors is 2D (i.e. we have colors for each (instance, feature)) then broadcast this across all timesteps
     if any([
         colors is None,
-        isinstance(colors, list) and isinstance(colors[0], list) and isinstance(colors[0][0], str),
-        (isinstance(colors, Tensor) or isinstance(colors, Arr)) and colors.ndim == 3,
+        isinstance(colors, list) and isinstance(colors[0], list) and ((colors[0][0] is None) or isinstance(colors[0][0], str)),
+        (isinstance(colors, Tensor) or isinstance(colors, Arr)) and colors.ndim == 2,
     ]):
-        colors = [colors for _ in range(values.shape[0])]
-    # Now that colors has length `timesteps` in some sense, we can convert it to lists of strings
-    colors = [parse_colors_for_superposition_plot(c, n_instances, n_features) for c in colors]
+        colors = [colors for _ in range(n_timesteps)]
+    # Now that colors has 3D shape [timesteps, instances, features] we can convert it to nested lists of strings
+    colors = [[[
+                parse_colors_for_superposition_plot(c_feat)
+                for c_feat in c_inst
+            ] for c_inst in c_timestep
+        ] for c_timestep in colors
+    ]
 
-    # Same for subplot titles & titles
+    # Same for subplot titles & titles: we want to give them a `n_timesteps` dimension
     if subplot_titles is not None:
         if isinstance(subplot_titles, list) and isinstance(subplot_titles[0], str):
-            subplot_titles = [subplot_titles for _ in range(values.shape[0])]
+            subplot_titles = [subplot_titles for _ in range(n_timesteps)]
     if title is not None:
         if isinstance(title, str):
-            title = [title for _ in range(values.shape[0])]
+            title = [title for _ in range(n_timesteps)]
 
-    # Create a figure and axes
-    fig, axs = plt.subplots(1, n_instances, figsize=(5 * n_instances, 5))
-    if n_instances == 1:
-        axs = [axs]
+    # Create a figure and axes, and make sure axs is a 2D array
+    fig, axs = plt.subplots(n_rows, n_cols, figsize=(2.5*n_cols, 2.5*n_rows))
+    axs = np.broadcast_to(axs, (n_rows, n_cols))
     
     # If there are titles, add more spacing for them
-    fig.subplots_adjust(bottom=0.2, top=0.9, left=0.1, right=0.9)
-    if title:
-        fig.subplots_adjust(top=0.8)
+    fig.subplots_adjust(bottom=0.2, top=(0.8 if title else 0.9), left=0.1, right=0.9, hspace=0.5)
     
     # Initialize lines and markers
     lines = []
     markers = []
-    for instance_idx, ax in enumerate(axs):
-        ax.set_xlim(-1.5, 1.5)
-        ax.set_ylim(-1.5, 1.5)
+    for instance_idx, ((row, col), n_feats, limits_per_instance) in enumerate(zip(row_col_tuples, n_features_per_instance, limits_per_instance)):
+
+        # Get the right line width for this particular instance (smaller if we're plotting a lot of data)
+        linewidth, markersize = (1, 4) if (n_feats >= 25) else (1.5, 8)
+
+        # Get the right axis, and set the limits
+        ax = axs[row, col]
+        ax.set_xlim(-limits_per_instance, limits_per_instance)
+        ax.set_ylim(-limits_per_instance, limits_per_instance)
         ax.set_aspect('equal', adjustable='box')
+
+        # Add all the features for this instance
         instance_lines = []
         instance_markers = []
-        for feature_idx in range(n_features):
+        for feature_idx in range(n_feats):
             line, = ax.plot([], [], color=colors[0][instance_idx][feature_idx], lw=linewidth)
             marker, = ax.plot([], [], color=colors[0][instance_idx][feature_idx], marker='o', markersize=markersize)
             instance_lines.append(line)
@@ -256,9 +503,9 @@ def plot_features_in_2d(
         if n_timesteps > 1:
             _ = slider.val
         t = int(val) 
-        for instance_idx in range(n_instances):
-            for feature_idx in range(n_features):
-                x, y = values[t, instance_idx, feature_idx].tolist()
+        for instance_idx, ((row, col), n_feats) in enumerate(zip(row_col_tuples, n_features_per_instance)):
+            for feature_idx in range(n_feats):
+                x, y = W[t][instance_idx][feature_idx].tolist()
                 lines[instance_idx][feature_idx].set_data([0, x], [0, y])
                 markers[instance_idx][feature_idx].set_data(x, y)
                 lines[instance_idx][feature_idx].set_color(colors[t][instance_idx][feature_idx])
@@ -266,7 +513,7 @@ def plot_features_in_2d(
             if title:
                 fig.suptitle(title[t], fontsize=15)
             if subplot_titles:
-                axs[instance_idx].set_title(subplot_titles[t][instance_idx], fontsize=12)
+                axs[row, col].set_title(subplot_titles[t][instance_idx], fontsize=12)
         fig.canvas.draw_idle()
     
     def play(event):
@@ -282,13 +529,8 @@ def plot_features_in_2d(
         ax_slider = plt.axes([0.15, 0.05, 0.7, 0.05], facecolor='lightgray')
         slider = Slider(ax_slider, 'Time', 0, n_timesteps - 1, valinit=0, valfmt='%1.0f')
 
-        # Create the play button
-        # ax_button = plt.axes([0.8, 0.05, 0.08, 0.05], facecolor='lightgray')
-        # button = Button(ax_button, 'Play')
-
         # Call the update function when the slider value is changed / button is clicked
         slider.on_changed(update)
-        # button.on_clicked(play)
 
         # Initialize the plot
         play(0)
@@ -303,6 +545,8 @@ def plot_features_in_2d(
         ani = FuncAnimation(fig, update, frames=n_timesteps, interval=0.04, repeat=False)
         clear_output()
         return ani
+    
+
     plt.show()
 
 
