@@ -457,6 +457,8 @@ def plot_features_in_2d(
             ] for c_inst in c_timestep
         ] for c_timestep in colors
     ]
+    # Finally, we double the length of colors if they're a list of length n_instances//2, because this is how we plot W_enc and W_dec
+    colors = [2 * x if (isinstance(x, list) and (len(x) == n_instances // 2)) else x for x in colors]
 
     # Same for subplot titles & titles: we want to give them a `n_timesteps` dimension
     if subplot_titles is not None:
